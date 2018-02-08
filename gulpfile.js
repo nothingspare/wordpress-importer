@@ -9,7 +9,7 @@ var request = require('request');
 var rp = require('request-promise');
 var cheerio = require('cheerio');
 
-gulp.task('export', function () {
+gulp.task('map', function () {
 	console.log('sitemap in progress: expecting --site http(s)://PREFIX.URL.TLD/');
 	console.log(argv.site);
 	var generator = Generator(argv.site, {
@@ -23,7 +23,7 @@ gulp.task('export', function () {
 	generator.start();
 });
 
-gulp.task('digest', function () {
+gulp.task('parse', function () {
 	console.log('digest in progress: expecting --site http(s)://PREFIX.URL.TLD/');
 	var siteBase = argv.site;
 	var sitemap = fs.readFileSync('./sitemap.xml').toString();
@@ -54,21 +54,64 @@ gulp.task('digest', function () {
 gulp.task('rip', function () {
 	var sitemap = fs.readFileSync('./sitemap.json').toString();
 	var json = JSON.parse(sitemap);
-	// console.log(json);
+	var selector = argv.selector;
 	i = 0;
 	_.each(json, function (details, page) {
-		i++;
-		if (i > 1) {
-			return;
-		}
 		console.log(details.url);
-		rp(details.url)
-			.then(function (resp) {
-				var content = cheerio(resp).find('#inner').html()
-				console.log(content);
-			});
+		i = i + 1000;
+		setTimeout(function () {
+			rp(details.url)
+				.then(function (resp) {
+					var extensionParse = details.url.split('.');
+					if (extensionParse > 1){
+						fs.writeFileSync('./rip/' + details.page, resp);
+					}
+					else {
+						var content = cheerio(resp).find(selector).html();
+						fs.writeFileSync('./rip/' + details.page + '.html', content)
+					}
+				});
+		}, i);
 	});
 	//request
 });
 
-gulp.task('import', function () {});
+gulp.task('push', function () {
+	var sitemap = fs.readFileSync('./sitemap.json').toString();
+	var json = JSON.parse(sitemap);
+
+	var dest = argv.dest;
+	var auth = argv.auth;
+	console.log(dest, auth);
+	i = 0;
+	_.each(json, function (details, page) {
+		var pageObj = {}
+		try {
+			var content = fs.readFileSync('./rip/' + details.page + '.html').toString();
+		}
+		catch (e) {
+			console.log(e);
+		}
+
+		if (content) {
+			pageObj = {
+				title: details.page,
+				status: 'publish',
+				content: content
+			};
+			rp({
+				method: 'POST',
+				json: true,
+				uri: dest,
+				body: pageObj,
+				headers: {
+					'Authorization': 'Basic ' + auth,
+					'Content-Type': 'application/json'
+				}
+			})
+			.then(function (resp) {
+				console.log(resp);
+			});
+		}
+	});
+});
